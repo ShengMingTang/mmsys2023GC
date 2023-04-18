@@ -1,0 +1,7 @@
+{
+    "ccType": 3,
+    "multiPathType": 3,
+    "minWnd": 1,
+    "maxWnd": 64,
+    "slowStartThreshold": 32
+}

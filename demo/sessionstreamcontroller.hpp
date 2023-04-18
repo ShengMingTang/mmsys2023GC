@@ -7,6 +7,7 @@
 #include "congestioncontrol.hpp"
 #include "basefw/base/log.h"
 #include "packettype.h"
+#include "base/hash.h"
 
 class SessionStreamCtlHandler
 {
@@ -22,348 +23,192 @@ class PacketSender
 {
 public:
     bool CanSend(uint32_t cwnd, uint32_t downloadingPktCnt)
-    {
+    ;
+    // {
 
-        auto rt = false;
-        if (cwnd > downloadingPktCnt)
-        {
-            rt = true;
-        }
-        else
-        {
-            rt = false;
-        }
-        SPDLOG_TRACE("cwnd:{},downloadingPktCnt:{},rt: {}", cwnd, downloadingPktCnt, rt);
-        return rt;
-    }
+    //     auto rt = false;
+    //     if (cwnd > downloadingPktCnt)
+    //     {
+    //         rt = true;
+    //     }
+    //     else
+    //     {
+    //         rt = false;
+    //     }
+    //     SPDLOG_TRACE("cwnd:{},downloadingPktCnt:{},rt: {}", cwnd, downloadingPktCnt, rt);
+    //     return rt;
+    // }
 
     uint32_t MaySendPktCnt(uint32_t cwnd, uint32_t downloadingPktCnt)
-    {
-        SPDLOG_TRACE("cwnd:{},downloadingPktCnt:{}", cwnd, downloadingPktCnt);
-        if (cwnd >= downloadingPktCnt)
-        {
-            return std::min(cwnd - downloadingPktCnt, 8U);
-        }
-        else
-        {
-            return 0U;
-        }
-    }
+    ;
+    // {
+    //     SPDLOG_TRACE("cwnd:{},downloadingPktCnt:{}", cwnd, downloadingPktCnt);
+    //     if (cwnd >= downloadingPktCnt)
+    //     {
+    //         return std::min(cwnd - downloadingPktCnt, 8U);
+    //     }
+    //     else
+    //     {
+    //         return 0U;
+    //     }
+    // }
 
 };
 
 /// SessionStreamController is the single session delegate inside transport module.
 /// This single session contains three part, congestion control module, loss detection module, traffic control module.
 /// It may be used to send data request in its session and receive the notice when packets has been sent
-class SessionStreamController
+class SessionStreamController: public std::enable_shared_from_this<SessionStreamController>
 {
 public:
 
-    SessionStreamController()
-    {
-        SPDLOG_TRACE("");
-    }
-
-    ~SessionStreamController()
-    {
-        SPDLOG_TRACE("");
-        StopSessionStreamCtl();
-    }
-
+    SessionStreamController();
+    ~SessionStreamController();
     void StartSessionStreamCtl(const basefw::ID& sessionId, RenoCongestionCtlConfig& ccConfig,
-            std::weak_ptr<SessionStreamCtlHandler> ssStreamHandler)
-    {
-        if (isRunning)
-        {
-            SPDLOG_WARN("isRunning = true");
-            return;
-        }
-        isRunning = true;
-        m_sessionId = sessionId;
-        m_ssStreamHandler = ssStreamHandler;
-        // cc
-        m_ccConfig = ccConfig;
-        m_congestionCtl.reset(new RenoCongestionContrl(m_ccConfig));
-
-        // send control
-        m_sendCtl.reset(new PacketSender());
-
-        //loss detection
-        m_lossDetect.reset(new DefaultLossDetectionAlgo());
-
-        // set initial smothed rtt
-        m_rttstats.set_initial_rtt(Duration::FromMilliseconds(200));
-
-    }
+            std::weak_ptr<SessionStreamCtlHandler> ssStreamHandler);
 
     // [SM]
     void StartSessionStreamCtl(const basefw::ID& sessionId, std::weak_ptr<SessionStreamCtlHandler> ssStreamHandler,
         CongestionCtlType ccType, void *pConfig = nullptr
-    )
-    {
-        if (isRunning)
-        {
-            SPDLOG_WARN("isRunning = true");
-            return;
-        }
-        isRunning = true;
-        m_sessionId = sessionId;
-        m_ssStreamHandler = ssStreamHandler;
-        // cc
-        // [SM]
-        // m_ccConfig = ccConfig;
-        // m_congestionCtl.reset(new RenoCongestionContrl(m_ccConfig));
-        if(ccType == CongestionCtlType::reno || ccType == CongestionCtlType::reno_AIAD) {
-            m_ccConfig = *(RenoCongestionCtlConfig*)pConfig;
-            if(ccType == CongestionCtlType::reno) {
-                m_congestionCtl.reset(new RenoCongestionContrl(m_ccConfig));
-            }
-            else if(ccType == CongestionCtlType::reno_AIAD) {
-                m_congestionCtl.reset(new RenoAIADCongestionContrl(m_ccConfig));
-            }
-            else {
-                m_congestionCtl.reset(nullptr);
-                return;
-            }
-        }
+    );
 
-        // send control
-        m_sendCtl.reset(new PacketSender());
-
-        //loss detection
-        m_lossDetect.reset(new DefaultLossDetectionAlgo());
-
-        // set initial smothed rtt
-        m_rttstats.set_initial_rtt(Duration::FromMilliseconds(200));
-
-    }
-
-    void StopSessionStreamCtl()
-    {
-        if (isRunning)
-        {
-            isRunning = false;
-        }
-        else
-        {
-            SPDLOG_WARN("isRunning = false");
-        }
-    }
-
-    basefw::ID GetSessionId()
-    {
-        if (isRunning)
-        {
-            return m_sessionId;
-        }
-        else
-        {
-            return {};
-        }
-    }
-
-    bool CanSend()
-    {
-        SPDLOG_TRACE("");
-        if (!isRunning)
-        {
-            return false;
-        }
-
-        return m_sendCtl->CanSend(m_congestionCtl->GetCWND(), GetInFlightPktNum());
-    }
-
-    uint32_t CanRequestPktCnt()
-    {
-        SPDLOG_TRACE("");
-        if (!isRunning)
-        {
-            return false;
-        }
-        return m_sendCtl->MaySendPktCnt(m_congestionCtl->GetCWND(), GetInFlightPktNum());
-    };
-
+    void StopSessionStreamCtl();
+    basefw::ID GetSessionId();
+    bool CanSend();
+    uint32_t CanRequestPktCnt();
     /// send ONE datarequest Pkt, requestting for the data pieces whose id are in spns
-    bool DoRequestdata(const basefw::ID& peerid, const std::vector<int32_t>& spns)
-    {
-        SPDLOG_TRACE("peerid = {}, spns = {}", peerid.ToLogStr(), spns);
-        if (!isRunning)
-        {
-            return false;
-        }
-        if (!CanSend())
-        {
-            SPDLOG_WARN("CanSend = false");
-            return false;
-        }
-
-        if (spns.size() > CanRequestPktCnt())
-        {
-            SPDLOG_WARN("The number of request data pieces {} exceeds the freewnd {}", spns.size(), CanRequestPktCnt());
-            return false;
-        }
-        auto handler = m_ssStreamHandler.lock();
-        if (handler)
-        {
-            return handler->DoSendDataRequest(peerid, spns);
-        }
-        else
-        {
-            SPDLOG_WARN("SessionStreamHandler is null");
-            return false;
-        }
-
-    }
-
+    bool DoRequestdata(const basefw::ID& peerid, const std::vector<int32_t>& spns);
     void OnDataRequestPktSent(const std::vector<SeqNumber>& seqs,
-            const std::vector<DataNumber>& dataids, Timepoint sendtic)
-    {
-        SPDLOG_TRACE("seq = {}, dataid = {}, sendtic = {}",
-                seqs,
-                dataids, sendtic.ToDebuggingValue());
-        if (!isRunning)
-        {
-            return;
-        }
-        auto seqidx = 0;
-        for (auto datano: dataids)
-        {
-            DataPacket p;
-            p.seq = seqs[seqidx];
-            p.pieceId = datano;
-            // add to downloading queue
-            m_inflightpktmap.AddSentPacket(p, sendtic);
-
-            // inform cc algo that a packet is sent
-            InflightPacket sentpkt;
-            sentpkt.seq = seqs[seqidx];
-            sentpkt.pieceId = datano;
-            sentpkt.sendtic = sendtic;
-            m_congestionCtl->OnDataSent(sentpkt);
-            seqidx++;
-        }
-
-    }
+            const std::vector<DataNumber>& dataids, Timepoint sendtic);
 
     void OnDataPktReceived(uint32_t seq, int32_t datapiece, Timepoint recvtic)
-    {
-        if (!isRunning)
-        {
-            return;
-        }
-        // find the sending record
-        auto rtpair = m_inflightpktmap.PktIsInFlight(seq, datapiece);
-        auto inFlight = rtpair.first;
-        auto inflightPkt = rtpair.second;
-        if (inFlight)
-        {
+    ;
+    // {
+    //     if (!isRunning)
+    //     {
+    //         return;
+    //     }
+    //     // find the sending record
+    //     auto rtpair = m_inflightpktmap.PktIsInFlight(seq, datapiece);
+    //     auto inFlight = rtpair.first;
+    //     auto inflightPkt = rtpair.second;
+    //     if (inFlight)
+    //     {
 
-            auto oldsrtt = m_rttstats.smoothed_rtt();
-            // we don't have ack_delay in this simple implementation.
-            auto pkt_rtt = recvtic - inflightPkt.sendtic;
-            m_rttstats.UpdateRtt(pkt_rtt, Duration::Zero(), Clock::GetClock()->Now());
-            auto newsrtt = m_rttstats.smoothed_rtt();
+    //         auto oldsrtt = m_rttstats.smoothed_rtt();
+    //         // we don't have ack_delay in this simple implementation.
+    //         auto pkt_rtt = recvtic - inflightPkt.sendtic;
+    //         m_rttstats.UpdateRtt(pkt_rtt, Duration::Zero(), Clock::GetClock()->Now());
+    //         auto newsrtt = m_rttstats.smoothed_rtt();
 
-            auto oldcwnd = m_congestionCtl->GetCWND();
+    //         auto oldcwnd = m_congestionCtl->GetCWND();
 
-            AckEvent ackEvent;
-            ackEvent.valid = true;
-            ackEvent.ackPacket.seq = seq;
-            ackEvent.ackPacket.pieceId = datapiece;
-            ackEvent.sendtic = inflightPkt.sendtic;
-            LossEvent lossEvent; // if we detect loss when ACK event, we may do loss check here.
-            m_congestionCtl->OnDataAckOrLoss(ackEvent, lossEvent, m_rttstats);
+    //         AckEvent ackEvent;
+    //         ackEvent.valid = true;
+    //         ackEvent.ackPacket.seq = seq;
+    //         ackEvent.ackPacket.pieceId = datapiece;
+    //         ackEvent.sendtic = inflightPkt.sendtic;
+    //         LossEvent lossEvent; // if we detect loss when ACK event, we may do loss check here.
+    //         m_congestionCtl->OnDataAckOrLoss(ackEvent, lossEvent, m_rttstats);
 
-            auto newcwnd = m_congestionCtl->GetCWND();
-            // mark as received
-            m_inflightpktmap.OnPacktReceived(inflightPkt, recvtic);
-        }
-        else
-        {
-            SPDLOG_WARN(" Recv an pkt with unknown seq:{}", seq);
-        }
+    //         auto newcwnd = m_congestionCtl->GetCWND();
+    //         // mark as received
+    //         m_inflightpktmap.OnPacktReceived(inflightPkt, recvtic);
+    //     }
+    //     else
+    //     {
+    //         SPDLOG_WARN(" Recv an pkt with unknown seq:{}", seq);
+    //     }
 
-    }
+    // }
 
     void OnLossDetectionAlarm()
-    {
-        DoAlarmTimeoutDetection();
-    }
+    ;
+    // {
+    //     DoAlarmTimeoutDetection();
+    // }
 
     void InformLossUp(LossEvent& loss)
-    {
-        if (!isRunning)
-        {
-            return;
-        }
-        auto handler = m_ssStreamHandler.lock();
-        if (handler)
-        {
-            std::vector<int32_t> lossedPieces;
-            for (auto&& pkt: loss.lossPackets)
-            {
-                lossedPieces.emplace_back(pkt.pieceId);
-            }
-            handler->OnPiecePktTimeout(m_sessionId, lossedPieces);
-        }
-    }
+    ;
+    // {
+    //     if (!isRunning)
+    //     {
+    //         return;
+    //     }
+    //     auto handler = m_ssStreamHandler.lock();
+    //     if (handler)
+    //     {
+    //         std::vector<int32_t> lossedPieces;
+    //         for (auto&& pkt: loss.lossPackets)
+    //         {
+    //             lossedPieces.emplace_back(pkt.pieceId);
+    //         }
+    //         handler->OnPiecePktTimeout(m_sessionId, lossedPieces);
+    //     }
+    // }
 
     void DoAlarmTimeoutDetection()
-    {
-        if (!isRunning)
-        {
-            return;
-        }
-        ///check timeout
-        Timepoint now_t = Clock::GetClock()->Now();
-        AckEvent ack;
-        LossEvent loss;
-        m_lossDetect->DetectLoss(m_inflightpktmap, now_t, ack, -1, loss, m_rttstats);
-        if (loss.valid)
-        {
-            // [SM]
-            m_loss = (double)loss.lossPackets.size() / (double)GetInFlightPktNum();
+    ;
+    // {
+    //     if (!isRunning)
+    //     {
+    //         return;
+    //     }
+    //     ///check timeout
+    //     Timepoint now_t = Clock::GetClock()->Now();
+    //     AckEvent ack;
+    //     LossEvent loss;
+    //     m_lossDetect->DetectLoss(m_inflightpktmap, now_t, ack, -1, loss, m_rttstats);
+    //     if (loss.valid)
+    //     {
+    //         // [SM]
+    //         m_loss = (double)loss.lossPackets.size() / (double)GetInFlightPktNum();
 
-            for (auto&& pkt: loss.lossPackets)
-            {
-                m_inflightpktmap.RemoveFromInFlight(pkt);
-            }
-            m_congestionCtl->OnDataAckOrLoss(ack, loss, m_rttstats);
-            InformLossUp(loss);
-        }
-    }
+    //         for (auto&& pkt: loss.lossPackets)
+    //         {
+    //             m_inflightpktmap.RemoveFromInFlight(pkt);
+    //         }
+    //         m_congestionCtl->OnDataAckOrLoss(ack, loss, m_rttstats);
+    //         InformLossUp(loss);
+    //     }
+    // }
 
     Duration GetRtt()
-    {
-        Duration rtt{ Duration::Zero() };
-        if (isRunning)
-        {
-            rtt = m_rttstats.smoothed_rtt();
-        }
-        SPDLOG_TRACE("rtt = {}", rtt.ToDebuggingValue());
-        return rtt;
-    }
+    ;
+    // {
+    //     Duration rtt{ Duration::Zero() };
+    //     if (isRunning)
+    //     {
+    //         rtt = m_rttstats.smoothed_rtt();
+    //     }
+    //     SPDLOG_TRACE("rtt = {}", rtt.ToDebuggingValue());
+    //     return rtt;
+    // }
 
     uint32_t GetInFlightPktNum()
-    {
-        return m_inflightpktmap.InFlightPktNum();
-    }
+    ;
+    // {
+    //     return m_inflightpktmap.InFlightPktNum();
+    // }
 
 
     basefw::ID GetSessionID()
-    {
-        return m_sessionId;
-    }
+    ;
+    // {
+    //     return m_sessionId;
+    // }
 
     // [SM]
     uint32_t GetCWND()
-    {
-        return m_congestionCtl->GetCWND();
-    }
+    ;
+    // {
+    //     return m_congestionCtl->GetCWND();
+    // }
     double GetLossRate()
-    {
-        return m_loss;
-    }
+    ;
+    // {
+    //     return m_loss;
+    // }
 
 private:
     bool isRunning{ false };
@@ -381,5 +226,216 @@ private:
 
     // [SM]
     double m_loss;
+};
+
+
+
+// [SM]
+// cc bbr
+class BBRCongestionControl : public CongestionCtlAlgo
+{
+public:
+    
+    explicit BBRCongestionControl(const RenoCongestionCtlConfig& ccConfig, std::weak_ptr<SessionStreamController> shared_ptr)
+    ;
+    // {
+    //     m_ssThresh = ccConfig.ssThresh;
+    //     m_minCwnd = ccConfig.minCwnd;
+    //     m_maxCwnd = ccConfig.maxCwnd;
+    //     m_sessionhandler = shared_ptr;
+    //     SPDLOG_DEBUG("m_ssThresh:{}, m_minCwnd:{}, m_maxCwnd:{} ", m_ssThresh, m_minCwnd, m_maxCwnd);
+    // }
+
+    uint32_t GetInFlightPktNum()
+    ;
+    // {
+    //     if (auto observe = m_sessionhandler.lock()) {
+    //         return observe->GetInFlightPktNum();
+    //     } else {
+    //         return UINT32_MAX;
+    //     }
+    // }
+
+    ~BBRCongestionControl() override
+    ;
+    // {
+    //     SPDLOG_DEBUG("");
+    // }
+
+    CongestionCtlType GetCCtype() override
+    ;
+    // {
+    //     return CongestionCtlType::bbr;
+    // }
+
+    void OnDataSent(const InflightPacket& sentpkt) override
+    ;
+    // {
+    //     SPDLOG_TRACE("");
+    // }
+
+    void OnDataAckOrLoss(const AckEvent& ackEvent, const LossEvent& lossEvent, RttStats& rttstats) override
+    ;
+    // {
+    //     SPDLOG_TRACE("ackevent:{}, lossevent:{}", ackEvent.DebugInfo(), lossEvent.DebugInfo());
+    //     if (lossEvent.valid)
+    //     {
+    //         OnDataLoss(lossEvent);
+    //     }
+
+    //     if (ackEvent.valid)
+    //     {
+    //         OnDataRecv(ackEvent);
+    //     }
+
+    // }
+
+    /////
+    uint32_t GetCWND() override
+    ;
+    // {
+    //     SPDLOG_TRACE(" {}", m_cwnd);
+    //     return m_cwnd;
+    // }
+
+//    virtual uint32_t GetFreeCWND() = 0;
+
+private:
+
+    bool InSlowStart()
+    ;
+    // {
+    //     bool rt = false;
+    //     if (m_cwnd < m_ssThresh)
+    //     {
+    //         rt = true;
+    //     }
+    //     else
+    //     {
+    //         rt = false;
+    //     }
+    //     SPDLOG_TRACE(" m_cwnd:{}, m_ssThresh:{}, InSlowStart:{}", m_cwnd, m_ssThresh, rt);
+    //     return rt;
+    // }
+
+    bool LostCheckRecovery(Timepoint largestLostSentTic)
+    ;
+    // {
+    //     SPDLOG_DEBUG("largestLostSentTic:{},lastLagestLossPktSentTic:{}",
+    //             largestLostSentTic.ToDebuggingValue(), lastLagestLossPktSentTic.ToDebuggingValue());
+    //     /** If the largest sent tic of this loss event,is bigger than the last sent tic of the last lost pkt
+    //      * (plus a 10ms correction), this session is in Recovery phase.
+    //      * */
+    //     if (lastLagestLossPktSentTic.IsInitialized() &&
+    //         (largestLostSentTic + Duration::FromMilliseconds(10) > lastLagestLossPktSentTic))
+    //     {
+    //         SPDLOG_DEBUG("In Recovery");
+    //         return true;
+    //     }
+    //     else
+    //     {
+    //         // a new timelost
+    //         lastLagestLossPktSentTic = largestLostSentTic;
+    //         SPDLOG_DEBUG("new loss");
+    //         return false;
+    //     }
+
+    // }
+
+    void ExitSlowStart()
+    ;
+    // {
+    //     SPDLOG_DEBUG("m_ssThresh:{}, m_cwnd:{}", m_ssThresh, m_cwnd);
+    //     m_ssThresh = m_cwnd;
+    // }
+
+
+    void OnDataRecv(const AckEvent& ackEvent)
+    ;
+    // {
+    //     SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
+    //     if (InSlowStart())
+    //     {
+    //         /// add 1 for each ack event
+    //         m_cwnd += 1;
+
+    //         if (m_cwnd >= m_ssThresh)
+    //         {
+    //             ExitSlowStart();
+    //         }
+    //         SPDLOG_DEBUG("new m_cwnd:{}", m_cwnd);
+    //     }
+    //     else
+    //     {
+    //         /// add cwnd for each RTT
+    //         m_cwndCnt++;
+    //         m_cwnd += m_cwndCnt / m_cwnd;
+    //         if (m_cwndCnt == m_cwnd)
+    //         {
+    //             m_cwndCnt = 0;
+    //         }
+    //         SPDLOG_DEBUG("not in slow start state,new m_cwndCnt:{} new m_cwnd:{}",
+    //                 m_cwndCnt, ackEvent.DebugInfo(), m_cwnd);
+
+    //     }
+    //     m_cwnd = BoundCwnd(m_cwnd);
+
+    //     SPDLOG_DEBUG("after RX, m_cwnd={}", m_cwnd);
+    // }
+
+    void OnDataLoss(const LossEvent& lossEvent)
+    ;
+    // {
+    //     SPDLOG_DEBUG("lossevent:{}", lossEvent.DebugInfo());
+    //     Timepoint maxsentTic{ Timepoint::Zero() };
+
+    //     for (const auto& lostpkt: lossEvent.lossPackets)
+    //     {
+    //         maxsentTic = std::max(maxsentTic, lostpkt.sendtic);
+    //     }
+
+    //     /** In Recovery phase, cwnd will decrease 1 pkt for each lost pkt
+    //      *  Otherwise, cwnd will cut half.
+    //      * */
+    //     if (InSlowStart())
+    //     {
+    //         // loss in slow start, just cut half
+    //         m_cwnd = m_cwnd / 2;
+    //         m_cwnd = BoundCwnd(m_cwnd);
+
+    //     }
+    //     else //if (!LostCheckRecovery(maxsentTic))
+    //     {
+    //         // Not In slow start and not inside Recovery state
+    //         // [SM]
+    //         // Cut half
+    //         // m_cwnd = m_cwnd / 2;
+    //         m_cwnd -= lossEvent.lossPackets.size() / m_cwnd + 1;
+            
+    //         m_cwnd = BoundCwnd(m_cwnd);
+    //         m_ssThresh = m_cwnd;
+    //         // enter Recovery state
+    //     }
+    //     SPDLOG_DEBUG("after Loss, m_cwnd={}", m_cwnd);
+    // }
+
+
+    uint32_t BoundCwnd(uint32_t trySetCwnd)
+    ;
+    // {
+    //     return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
+    // }
+
+    uint32_t m_cwnd{ 1 };
+    uint32_t m_cwndCnt{ 0 }; /** in congestion avoid phase, used for counting ack packets*/
+    Timepoint lastLagestLossPktSentTic{ Timepoint::Zero() };
+
+
+    uint32_t m_minCwnd{ 1 };
+    uint32_t m_maxCwnd{ 64 };
+    uint32_t m_ssThresh{ 32 };/** slow start threshold*/
+
+    //[SM]
+    std::weak_ptr<SessionStreamController> m_sessionhandler;
 };
 

@@ -10,9 +10,10 @@
 #include "utils/rttstats.h"
 #include "utils/transporttime.h"
 #include "utils/defaultclock.hpp"
-#include "sessionstreamcontroller.hpp"
+// #include "sessionstreamcontroller.hpp"
 #include "packettype.h"
 
+class SessionStreamController;
 // [SM]
 // enum class CongestionCtlType : uint8_t
 // {
@@ -25,6 +26,7 @@ enum CongestionCtlType : uint8_t
     reno = 1,
     // [SM]
     reno_AIAD = 2,
+    bbr = 3,
 };
 
 struct LossEvent
@@ -35,19 +37,20 @@ struct LossEvent
     Timepoint losttic{ Timepoint::Infinite() };
 
     std::string DebugInfo() const
-    {
-        std::stringstream ss;
-        ss << "valid: " << valid << " "
-           << "lossPackets:{";
-        for (const auto& pkt: lossPackets)
-        {
-            ss << pkt;
-        }
+    ;
+    // {
+    //     std::stringstream ss;
+    //     ss << "valid: " << valid << " "
+    //        << "lossPackets:{";
+    //     for (const auto& pkt: lossPackets)
+    //     {
+    //         ss << pkt;
+    //     }
 
-        ss << "} "
-           << "losttic: " << losttic.ToDebuggingValue() << " ";
-        return ss.str();
-    }
+    //     ss << "} "
+    //        << "losttic: " << losttic.ToDebuggingValue() << " ";
+    //     return ss.str();
+    // }
 };
 
 struct AckEvent
@@ -59,17 +62,18 @@ struct AckEvent
     Timepoint losttic{ Timepoint::Infinite() };
 
     std::string DebugInfo() const
-    {
-        std::stringstream ss;
-        ss << "valid: " << valid << " "
-           << "ackpkt:{"
-           << "seq: " << ackPacket.seq << " "
-           << "dataid: " << ackPacket.pieceId << " "
-           << "} "
-           << "sendtic: " << sendtic.ToDebuggingValue() << " "
-           << "losttic: " << losttic.ToDebuggingValue() << " ";
-        return ss.str();
-    }
+    ;
+    // {
+    //     std::stringstream ss;
+    //     ss << "valid: " << valid << " "
+    //        << "ackpkt:{"
+    //        << "seq: " << ackPacket.seq << " "
+    //        << "dataid: " << ackPacket.pieceId << " "
+    //        << "} "
+    //        << "sendtic: " << sendtic.ToDebuggingValue() << " "
+    //        << "losttic: " << losttic.ToDebuggingValue() << " ";
+    //     return ss.str();
+    // }
 };
 
 /** This is a loss detection algorithm interface
@@ -103,39 +107,41 @@ class DefaultLossDetectionAlgo : public LossDetectionAlgo
 public:
     void DetectLoss(const InFlightPacketMap& downloadingmap, Timepoint eventtime, const AckEvent& ackEvent,
             uint64_t maxacked, LossEvent& losses, RttStats& rttStats) override
-    {
-        SPDLOG_TRACE("inflight: {} eventtime: {} ackEvent:{} ", downloadingmap.DebugInfo(),
-                eventtime.ToDebuggingValue(), ackEvent.DebugInfo());
-        /** RFC 9002 Section 6
-         * */
-        Duration maxrtt = std::max(rttStats.previous_srtt(), rttStats.latest_rtt());
-        if (maxrtt == Duration::Zero())
-        {
-            SPDLOG_DEBUG(" {}", maxrtt == Duration::Zero());
-            maxrtt = rttStats.SmoothedOrInitialRtt();
-        }
-        Duration loss_delay = maxrtt + (maxrtt * (5.0 / 4.0));
-        loss_delay = std::max(loss_delay, Duration::FromMicroseconds(1));
-        SPDLOG_TRACE(" maxrtt: {}, loss_delay: {}", maxrtt.ToDebuggingValue(), loss_delay.ToDebuggingValue());
-        for (const auto& pkt_itor: downloadingmap.inflightPktMap)
-        {
-            const auto& pkt = pkt_itor.second;
-            if (Timepoint(pkt.sendtic + loss_delay) <= eventtime)
-            {
-                losses.lossPackets.emplace_back(pkt);
-            }
-        }
-        if (!losses.lossPackets.empty())
-        {
-            losses.losttic = eventtime;
-            losses.valid = true;
-            SPDLOG_DEBUG("losses: {}", losses.DebugInfo());
-        }
-    }
+    ;
+    // {
+    //     SPDLOG_TRACE("inflight: {} eventtime: {} ackEvent:{} ", downloadingmap.DebugInfo(),
+    //             eventtime.ToDebuggingValue(), ackEvent.DebugInfo());
+    //     /** RFC 9002 Section 6
+    //      * */
+    //     Duration maxrtt = std::max(rttStats.previous_srtt(), rttStats.latest_rtt());
+    //     if (maxrtt == Duration::Zero())
+    //     {
+    //         SPDLOG_DEBUG(" {}", maxrtt == Duration::Zero());
+    //         maxrtt = rttStats.SmoothedOrInitialRtt();
+    //     }
+    //     Duration loss_delay = maxrtt + (maxrtt * (5.0 / 4.0));
+    //     loss_delay = std::max(loss_delay, Duration::FromMicroseconds(1));
+    //     SPDLOG_TRACE(" maxrtt: {}, loss_delay: {}", maxrtt.ToDebuggingValue(), loss_delay.ToDebuggingValue());
+    //     for (const auto& pkt_itor: downloadingmap.inflightPktMap)
+    //     {
+    //         const auto& pkt = pkt_itor.second;
+    //         if (Timepoint(pkt.sendtic + loss_delay) <= eventtime)
+    //         {
+    //             losses.lossPackets.emplace_back(pkt);
+    //         }
+    //     }
+    //     if (!losses.lossPackets.empty())
+    //     {
+    //         losses.losttic = eventtime;
+    //         losses.valid = true;
+    //         SPDLOG_DEBUG("losses: {}", losses.DebugInfo());
+    //     }
+    // }
 
     ~DefaultLossDetectionAlgo() override
-    {
-    }
+    ;
+    // {
+    // }
 
 private:
 };
@@ -175,168 +181,180 @@ class RenoCongestionContrl : public CongestionCtlAlgo
 public:
 
     explicit RenoCongestionContrl(const RenoCongestionCtlConfig& ccConfig)
-    {
-        m_ssThresh = ccConfig.ssThresh;
-        m_minCwnd = ccConfig.minCwnd;
-        m_maxCwnd = ccConfig.maxCwnd;
-        SPDLOG_DEBUG("m_ssThresh:{}, m_minCwnd:{}, m_maxCwnd:{} ", m_ssThresh, m_minCwnd, m_maxCwnd);
-    }
+    ;
+    // {
+    //     m_ssThresh = ccConfig.ssThresh;
+    //     m_minCwnd = ccConfig.minCwnd;
+    //     m_maxCwnd = ccConfig.maxCwnd;
+    //     SPDLOG_DEBUG("m_ssThresh:{}, m_minCwnd:{}, m_maxCwnd:{} ", m_ssThresh, m_minCwnd, m_maxCwnd);
+    // }
 
     ~RenoCongestionContrl() override
-    {
-        SPDLOG_DEBUG("");
-    }
+    ;
+    // {
+    //     SPDLOG_DEBUG("");
+    // }
 
     CongestionCtlType GetCCtype() override
-    {
-        return CongestionCtlType::reno;
-    }
+    ;
+    // {
+    //     return CongestionCtlType::reno;
+    // }
 
     void OnDataSent(const InflightPacket& sentpkt) override
-    {
-        SPDLOG_TRACE("");
-    }
+    ;
+    // {
+    //     SPDLOG_TRACE("");
+    // }
 
     void OnDataAckOrLoss(const AckEvent& ackEvent, const LossEvent& lossEvent, RttStats& rttstats) override
-    {
-        SPDLOG_TRACE("ackevent:{}, lossevent:{}", ackEvent.DebugInfo(), lossEvent.DebugInfo());
-        if (lossEvent.valid)
-        {
-            OnDataLoss(lossEvent);
-        }
+    ;
+    // {
+    //     SPDLOG_TRACE("ackevent:{}, lossevent:{}", ackEvent.DebugInfo(), lossEvent.DebugInfo());
+    //     if (lossEvent.valid)
+    //     {
+    //         OnDataLoss(lossEvent);
+    //     }
 
-        if (ackEvent.valid)
-        {
-            OnDataRecv(ackEvent);
-        }
+    //     if (ackEvent.valid)
+    //     {
+    //         OnDataRecv(ackEvent);
+    //     }
 
-    }
+    // }
 
     /////
     uint32_t GetCWND() override
-    {
-        SPDLOG_TRACE(" {}", m_cwnd);
-        return m_cwnd;
-    }
+    ;
+    // {
+    //     SPDLOG_TRACE(" {}", m_cwnd);
+    //     return m_cwnd;
+    // }
 
 //    virtual uint32_t GetFreeCWND() = 0;
 
 private:
 
     bool InSlowStart()
-    {
-        bool rt = false;
-        if (m_cwnd < m_ssThresh)
-        {
-            rt = true;
-        }
-        else
-        {
-            rt = false;
-        }
-        SPDLOG_TRACE(" m_cwnd:{}, m_ssThresh:{}, InSlowStart:{}", m_cwnd, m_ssThresh, rt);
-        return rt;
-    }
+    ;
+    // {
+    //     bool rt = false;
+    //     if (m_cwnd < m_ssThresh)
+    //     {
+    //         rt = true;
+    //     }
+    //     else
+    //     {
+    //         rt = false;
+    //     }
+    //     SPDLOG_TRACE(" m_cwnd:{}, m_ssThresh:{}, InSlowStart:{}", m_cwnd, m_ssThresh, rt);
+    //     return rt;
+    // }
 
     bool LostCheckRecovery(Timepoint largestLostSentTic)
-    {
-        SPDLOG_DEBUG("largestLostSentTic:{},lastLagestLossPktSentTic:{}",
-                largestLostSentTic.ToDebuggingValue(), lastLagestLossPktSentTic.ToDebuggingValue());
-        /** If the largest sent tic of this loss event,is bigger than the last sent tic of the last lost pkt
-         * (plus a 10ms correction), this session is in Recovery phase.
-         * */
-        if (lastLagestLossPktSentTic.IsInitialized() &&
-            (largestLostSentTic + Duration::FromMilliseconds(10) > lastLagestLossPktSentTic))
-        {
-            SPDLOG_DEBUG("In Recovery");
-            return true;
-        }
-        else
-        {
-            // a new timelost
-            lastLagestLossPktSentTic = largestLostSentTic;
-            SPDLOG_DEBUG("new loss");
-            return false;
-        }
+    ;
+    // {
+    //     SPDLOG_DEBUG("largestLostSentTic:{},lastLagestLossPktSentTic:{}",
+    //             largestLostSentTic.ToDebuggingValue(), lastLagestLossPktSentTic.ToDebuggingValue());
+    //     /** If the largest sent tic of this loss event,is bigger than the last sent tic of the last lost pkt
+    //      * (plus a 10ms correction), this session is in Recovery phase.
+    //      * */
+    //     if (lastLagestLossPktSentTic.IsInitialized() &&
+    //         (largestLostSentTic + Duration::FromMilliseconds(10) > lastLagestLossPktSentTic))
+    //     {
+    //         SPDLOG_DEBUG("In Recovery");
+    //         return true;
+    //     }
+    //     else
+    //     {
+    //         // a new timelost
+    //         lastLagestLossPktSentTic = largestLostSentTic;
+    //         SPDLOG_DEBUG("new loss");
+    //         return false;
+    //     }
 
-    }
+    // }
 
     void ExitSlowStart()
-    {
-        SPDLOG_DEBUG("m_ssThresh:{}, m_cwnd:{}", m_ssThresh, m_cwnd);
-        m_ssThresh = m_cwnd;
-    }
+    ;
+    // {
+    //     SPDLOG_DEBUG("m_ssThresh:{}, m_cwnd:{}", m_ssThresh, m_cwnd);
+    //     m_ssThresh = m_cwnd;
+    // }
 
 
     void OnDataRecv(const AckEvent& ackEvent)
-    {
-        SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
-        if (InSlowStart())
-        {
-            /// add 1 for each ack event
-            m_cwnd += 1;
+    ;
+    // {
+    //     SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
+    //     if (InSlowStart())
+    //     {
+    //         /// add 1 for each ack event
+    //         m_cwnd += 1;
 
-            if (m_cwnd >= m_ssThresh)
-            {
-                ExitSlowStart();
-            }
-            SPDLOG_DEBUG("new m_cwnd:{}", m_cwnd);
-        }
-        else
-        {
-            /// add cwnd for each RTT
-            m_cwndCnt++;
-            m_cwnd += m_cwndCnt / m_cwnd;
-            if (m_cwndCnt == m_cwnd)
-            {
-                m_cwndCnt = 0;
-            }
-            SPDLOG_DEBUG("not in slow start state,new m_cwndCnt:{} new m_cwnd:{}",
-                    m_cwndCnt, ackEvent.DebugInfo(), m_cwnd);
+    //         if (m_cwnd >= m_ssThresh)
+    //         {
+    //             ExitSlowStart();
+    //         }
+    //         SPDLOG_DEBUG("new m_cwnd:{}", m_cwnd);
+    //     }
+    //     else
+    //     {
+    //         /// add cwnd for each RTT
+    //         m_cwndCnt++;
+    //         m_cwnd += m_cwndCnt / m_cwnd;
+    //         if (m_cwndCnt == m_cwnd)
+    //         {
+    //             m_cwndCnt = 0;
+    //         }
+    //         SPDLOG_DEBUG("not in slow start state,new m_cwndCnt:{} new m_cwnd:{}",
+    //                 m_cwndCnt, ackEvent.DebugInfo(), m_cwnd);
 
-        }
-        m_cwnd = BoundCwnd(m_cwnd);
+    //     }
+    //     m_cwnd = BoundCwnd(m_cwnd);
 
-        SPDLOG_DEBUG("after RX, m_cwnd={}", m_cwnd);
-    }
+    //     SPDLOG_DEBUG("after RX, m_cwnd={}", m_cwnd);
+    // }
 
     void OnDataLoss(const LossEvent& lossEvent)
-    {
-        SPDLOG_DEBUG("lossevent:{}", lossEvent.DebugInfo());
-        Timepoint maxsentTic{ Timepoint::Zero() };
+    ;
+    // {
+    //     SPDLOG_DEBUG("lossevent:{}", lossEvent.DebugInfo());
+    //     Timepoint maxsentTic{ Timepoint::Zero() };
 
-        for (const auto& lostpkt: lossEvent.lossPackets)
-        {
-            maxsentTic = std::max(maxsentTic, lostpkt.sendtic);
-        }
+    //     for (const auto& lostpkt: lossEvent.lossPackets)
+    //     {
+    //         maxsentTic = std::max(maxsentTic, lostpkt.sendtic);
+    //     }
 
-        /** In Recovery phase, cwnd will decrease 1 pkt for each lost pkt
-         *  Otherwise, cwnd will cut half.
-         * */
-        if (InSlowStart())
-        {
-            // loss in slow start, just cut half
-            m_cwnd = m_cwnd / 2;
-            m_cwnd = BoundCwnd(m_cwnd);
+    //     /** In Recovery phase, cwnd will decrease 1 pkt for each lost pkt
+    //      *  Otherwise, cwnd will cut half.
+    //      * */
+    //     if (InSlowStart())
+    //     {
+    //         // loss in slow start, just cut half
+    //         m_cwnd = m_cwnd / 2;
+    //         m_cwnd = BoundCwnd(m_cwnd);
 
-        }
-        else //if (!LostCheckRecovery(maxsentTic))
-        {
-            // Not In slow start and not inside Recovery state
-            // Cut half
-            m_cwnd = m_cwnd / 2;
-            m_cwnd = BoundCwnd(m_cwnd);
-            m_ssThresh = m_cwnd;
-            // enter Recovery state
-        }
-        SPDLOG_DEBUG("after Loss, m_cwnd={}", m_cwnd);
-    }
+    //     }
+    //     else //if (!LostCheckRecovery(maxsentTic))
+    //     {
+    //         // Not In slow start and not inside Recovery state
+    //         // Cut half
+    //         m_cwnd = m_cwnd / 2;
+    //         m_cwnd = BoundCwnd(m_cwnd);
+    //         m_ssThresh = m_cwnd;
+    //         // enter Recovery state
+    //     }
+    //     SPDLOG_DEBUG("after Loss, m_cwnd={}", m_cwnd);
+    // }
 
 
     uint32_t BoundCwnd(uint32_t trySetCwnd)
-    {
-        return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
-    }
+    ;
+    // {
+    //     return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
+    // }
 
     uint32_t m_cwnd{ 1 };
     uint32_t m_cwndCnt{ 0 }; /** in congestion avoid phase, used for counting ack packets*/
@@ -347,178 +365,189 @@ private:
     uint32_t m_maxCwnd{ 64 };
     uint32_t m_ssThresh{ 32 };/** slow start threshold*/
 };
-
 
 class RenoAIADCongestionContrl : public CongestionCtlAlgo
 {
 public:
 
     explicit RenoAIADCongestionContrl(const RenoCongestionCtlConfig& ccConfig)
-    {
-        m_ssThresh = ccConfig.ssThresh;
-        m_minCwnd = ccConfig.minCwnd;
-        m_maxCwnd = ccConfig.maxCwnd;
-        SPDLOG_DEBUG("m_ssThresh:{}, m_minCwnd:{}, m_maxCwnd:{} ", m_ssThresh, m_minCwnd, m_maxCwnd);
-    }
+    ;
+    // {
+    //     m_ssThresh = ccConfig.ssThresh;
+    //     m_minCwnd = ccConfig.minCwnd;
+    //     m_maxCwnd = ccConfig.maxCwnd;
+    //     SPDLOG_DEBUG("m_ssThresh:{}, m_minCwnd:{}, m_maxCwnd:{} ", m_ssThresh, m_minCwnd, m_maxCwnd);
+    // }
 
     ~RenoAIADCongestionContrl() override
-    {
-        SPDLOG_DEBUG("");
-    }
+    ;
+    // {
+    //     SPDLOG_DEBUG("");
+    // }
 
     CongestionCtlType GetCCtype() override
-    {
-        return CongestionCtlType::reno_AIAD;
-    }
+    ;
+    // {
+    //     return CongestionCtlType::reno_AIAD;
+    // }
 
     void OnDataSent(const InflightPacket& sentpkt) override
-    {
-        SPDLOG_TRACE("");
-    }
+    ;
+    // {
+    //     SPDLOG_TRACE("");
+    // }
 
     void OnDataAckOrLoss(const AckEvent& ackEvent, const LossEvent& lossEvent, RttStats& rttstats) override
-    {
-        SPDLOG_TRACE("ackevent:{}, lossevent:{}", ackEvent.DebugInfo(), lossEvent.DebugInfo());
-        if (lossEvent.valid)
-        {
-            OnDataLoss(lossEvent);
-        }
+    ;
+    // {
+    //     SPDLOG_TRACE("ackevent:{}, lossevent:{}", ackEvent.DebugInfo(), lossEvent.DebugInfo());
+    //     if (lossEvent.valid)
+    //     {
+    //         OnDataLoss(lossEvent);
+    //     }
 
-        if (ackEvent.valid)
-        {
-            OnDataRecv(ackEvent);
-        }
+    //     if (ackEvent.valid)
+    //     {
+    //         OnDataRecv(ackEvent);
+    //     }
 
-    }
+    // }
 
     /////
     uint32_t GetCWND() override
-    {
-        SPDLOG_TRACE(" {}", m_cwnd);
-        return m_cwnd;
-    }
+    ;
+    // {
+    //     SPDLOG_TRACE(" {}", m_cwnd);
+    //     return m_cwnd;
+    // }
 
 //    virtual uint32_t GetFreeCWND() = 0;
 
 private:
 
     bool InSlowStart()
-    {
-        bool rt = false;
-        if (m_cwnd < m_ssThresh)
-        {
-            rt = true;
-        }
-        else
-        {
-            rt = false;
-        }
-        SPDLOG_TRACE(" m_cwnd:{}, m_ssThresh:{}, InSlowStart:{}", m_cwnd, m_ssThresh, rt);
-        return rt;
-    }
+    ;
+    // {
+    //     bool rt = false;
+    //     if (m_cwnd < m_ssThresh)
+    //     {
+    //         rt = true;
+    //     }
+    //     else
+    //     {
+    //         rt = false;
+    //     }
+    //     SPDLOG_TRACE(" m_cwnd:{}, m_ssThresh:{}, InSlowStart:{}", m_cwnd, m_ssThresh, rt);
+    //     return rt;
+    // }
 
     bool LostCheckRecovery(Timepoint largestLostSentTic)
-    {
-        SPDLOG_DEBUG("largestLostSentTic:{},lastLagestLossPktSentTic:{}",
-                largestLostSentTic.ToDebuggingValue(), lastLagestLossPktSentTic.ToDebuggingValue());
-        /** If the largest sent tic of this loss event,is bigger than the last sent tic of the last lost pkt
-         * (plus a 10ms correction), this session is in Recovery phase.
-         * */
-        if (lastLagestLossPktSentTic.IsInitialized() &&
-            (largestLostSentTic + Duration::FromMilliseconds(10) > lastLagestLossPktSentTic))
-        {
-            SPDLOG_DEBUG("In Recovery");
-            return true;
-        }
-        else
-        {
-            // a new timelost
-            lastLagestLossPktSentTic = largestLostSentTic;
-            SPDLOG_DEBUG("new loss");
-            return false;
-        }
+    ;
+    // {
+    //     SPDLOG_DEBUG("largestLostSentTic:{},lastLagestLossPktSentTic:{}",
+    //             largestLostSentTic.ToDebuggingValue(), lastLagestLossPktSentTic.ToDebuggingValue());
+    //     /** If the largest sent tic of this loss event,is bigger than the last sent tic of the last lost pkt
+    //      * (plus a 10ms correction), this session is in Recovery phase.
+    //      * */
+    //     if (lastLagestLossPktSentTic.IsInitialized() &&
+    //         (largestLostSentTic + Duration::FromMilliseconds(10) > lastLagestLossPktSentTic))
+    //     {
+    //         SPDLOG_DEBUG("In Recovery");
+    //         return true;
+    //     }
+    //     else
+    //     {
+    //         // a new timelost
+    //         lastLagestLossPktSentTic = largestLostSentTic;
+    //         SPDLOG_DEBUG("new loss");
+    //         return false;
+    //     }
 
-    }
+    // }
 
     void ExitSlowStart()
-    {
-        SPDLOG_DEBUG("m_ssThresh:{}, m_cwnd:{}", m_ssThresh, m_cwnd);
-        m_ssThresh = m_cwnd;
-    }
+    ;
+    // {
+    //     SPDLOG_DEBUG("m_ssThresh:{}, m_cwnd:{}", m_ssThresh, m_cwnd);
+    //     m_ssThresh = m_cwnd;
+    // }
 
 
     void OnDataRecv(const AckEvent& ackEvent)
-    {
-        SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
-        if (InSlowStart())
-        {
-            /// add 1 for each ack event
-            m_cwnd += 1;
+    ;
+    // {
+    //     SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
+    //     if (InSlowStart())
+    //     {
+    //         /// add 1 for each ack event
+    //         m_cwnd += 1;
 
-            if (m_cwnd >= m_ssThresh)
-            {
-                ExitSlowStart();
-            }
-            SPDLOG_DEBUG("new m_cwnd:{}", m_cwnd);
-        }
-        else
-        {
-            /// add cwnd for each RTT
-            m_cwndCnt++;
-            m_cwnd += m_cwndCnt / m_cwnd;
-            if (m_cwndCnt == m_cwnd)
-            {
-                m_cwndCnt = 0;
-            }
-            SPDLOG_DEBUG("not in slow start state,new m_cwndCnt:{} new m_cwnd:{}",
-                    m_cwndCnt, ackEvent.DebugInfo(), m_cwnd);
+    //         if (m_cwnd >= m_ssThresh)
+    //         {
+    //             ExitSlowStart();
+    //         }
+    //         SPDLOG_DEBUG("new m_cwnd:{}", m_cwnd);
+    //     }
+    //     else
+    //     {
+    //         /// add cwnd for each RTT
+    //         m_cwndCnt++;
+    //         m_cwnd += m_cwndCnt / m_cwnd;
+    //         if (m_cwndCnt == m_cwnd)
+    //         {
+    //             m_cwndCnt = 0;
+    //         }
+    //         SPDLOG_DEBUG("not in slow start state,new m_cwndCnt:{} new m_cwnd:{}",
+    //                 m_cwndCnt, ackEvent.DebugInfo(), m_cwnd);
 
-        }
-        m_cwnd = BoundCwnd(m_cwnd);
+    //     }
+    //     m_cwnd = BoundCwnd(m_cwnd);
 
-        SPDLOG_DEBUG("after RX, m_cwnd={}", m_cwnd);
-    }
+    //     SPDLOG_DEBUG("after RX, m_cwnd={}", m_cwnd);
+    // }
 
     void OnDataLoss(const LossEvent& lossEvent)
-    {
-        SPDLOG_DEBUG("lossevent:{}", lossEvent.DebugInfo());
-        Timepoint maxsentTic{ Timepoint::Zero() };
+    ;
+    // {
+    //     SPDLOG_DEBUG("lossevent:{}", lossEvent.DebugInfo());
+    //     Timepoint maxsentTic{ Timepoint::Zero() };
 
-        for (const auto& lostpkt: lossEvent.lossPackets)
-        {
-            maxsentTic = std::max(maxsentTic, lostpkt.sendtic);
-        }
+    //     for (const auto& lostpkt: lossEvent.lossPackets)
+    //     {
+    //         maxsentTic = std::max(maxsentTic, lostpkt.sendtic);
+    //     }
 
-        /** In Recovery phase, cwnd will decrease 1 pkt for each lost pkt
-         *  Otherwise, cwnd will cut half.
-         * */
-        if (InSlowStart())
-        {
-            // loss in slow start, just cut half
-            m_cwnd = m_cwnd / 2;
-            m_cwnd = BoundCwnd(m_cwnd);
+    //     /** In Recovery phase, cwnd will decrease 1 pkt for each lost pkt
+    //      *  Otherwise, cwnd will cut half.
+    //      * */
+    //     if (InSlowStart())
+    //     {
+    //         // loss in slow start, just cut half
+    //         m_cwnd = m_cwnd / 2;
+    //         m_cwnd = BoundCwnd(m_cwnd);
 
-        }
-        else //if (!LostCheckRecovery(maxsentTic))
-        {
-            // Not In slow start and not inside Recovery state
-            // [SM]
-            // Cut half
-            // m_cwnd = m_cwnd / 2;
-            m_cwnd -= lossEvent.lossPackets.size() / m_cwnd + 1;
+    //     }
+    //     else //if (!LostCheckRecovery(maxsentTic))
+    //     {
+    //         // Not In slow start and not inside Recovery state
+    //         // [SM]
+    //         // Cut half
+    //         // m_cwnd = m_cwnd / 2;
+    //         m_cwnd -= lossEvent.lossPackets.size() / m_cwnd + 1;
             
-            m_cwnd = BoundCwnd(m_cwnd);
-            m_ssThresh = m_cwnd;
-            // enter Recovery state
-        }
-        SPDLOG_DEBUG("after Loss, m_cwnd={}", m_cwnd);
-    }
+    //         m_cwnd = BoundCwnd(m_cwnd);
+    //         m_ssThresh = m_cwnd;
+    //         // enter Recovery state
+    //     }
+    //     SPDLOG_DEBUG("after Loss, m_cwnd={}", m_cwnd);
+    // }
 
 
     uint32_t BoundCwnd(uint32_t trySetCwnd)
-    {
-        return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
-    }
+    ;
+    // {
+    //     return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
+    // }
 
     uint32_t m_cwnd{ 1 };
     uint32_t m_cwndCnt{ 0 }; /** in congestion avoid phase, used for counting ack packets*/
@@ -529,3 +558,211 @@ private:
     uint32_t m_maxCwnd{ 64 };
     uint32_t m_ssThresh{ 32 };/** slow start threshold*/
 };
+
+// class BBRCongestionControl : public CongestionCtlAlgo
+// {
+// public:
+    
+//     explicit BBRCongestionControl(const RenoCongestionCtlConfig& ccConfig, std::weak_ptr<SessionStreamController> shared_ptr)
+//     ;
+//     // {
+//     //     m_ssThresh = ccConfig.ssThresh;
+//     //     m_minCwnd = ccConfig.minCwnd;
+//     //     m_maxCwnd = ccConfig.maxCwnd;
+//     //     m_sessionhandler = shared_ptr;
+//     //     SPDLOG_DEBUG("m_ssThresh:{}, m_minCwnd:{}, m_maxCwnd:{} ", m_ssThresh, m_minCwnd, m_maxCwnd);
+//     // }
+
+//     uint32_t GetInFlightPktNum()
+//     ;
+//     // {
+//     //     if (auto observe = m_sessionhandler.lock()) {
+//     //         return observe->GetInFlightPktNum();
+//     //     } else {
+//     //         return UINT32_MAX;
+//     //     }
+//     // }
+
+//     ~BBRCongestionControl() override
+//     ;
+//     // {
+//     //     SPDLOG_DEBUG("");
+//     // }
+
+//     CongestionCtlType GetCCtype() override
+//     ;
+//     // {
+//     //     return CongestionCtlType::bbr;
+//     // }
+
+//     void OnDataSent(const InflightPacket& sentpkt) override
+//     ;
+//     // {
+//     //     SPDLOG_TRACE("");
+//     // }
+
+//     void OnDataAckOrLoss(const AckEvent& ackEvent, const LossEvent& lossEvent, RttStats& rttstats) override
+//     ;
+//     // {
+//     //     SPDLOG_TRACE("ackevent:{}, lossevent:{}", ackEvent.DebugInfo(), lossEvent.DebugInfo());
+//     //     if (lossEvent.valid)
+//     //     {
+//     //         OnDataLoss(lossEvent);
+//     //     }
+
+//     //     if (ackEvent.valid)
+//     //     {
+//     //         OnDataRecv(ackEvent);
+//     //     }
+
+//     // }
+
+//     /////
+//     uint32_t GetCWND() override
+//     ;
+//     // {
+//     //     SPDLOG_TRACE(" {}", m_cwnd);
+//     //     return m_cwnd;
+//     // }
+
+// //    virtual uint32_t GetFreeCWND() = 0;
+
+// private:
+
+//     bool InSlowStart()
+//     ;
+//     // {
+//     //     bool rt = false;
+//     //     if (m_cwnd < m_ssThresh)
+//     //     {
+//     //         rt = true;
+//     //     }
+//     //     else
+//     //     {
+//     //         rt = false;
+//     //     }
+//     //     SPDLOG_TRACE(" m_cwnd:{}, m_ssThresh:{}, InSlowStart:{}", m_cwnd, m_ssThresh, rt);
+//     //     return rt;
+//     // }
+
+//     bool LostCheckRecovery(Timepoint largestLostSentTic)
+//     ;
+//     // {
+//     //     SPDLOG_DEBUG("largestLostSentTic:{},lastLagestLossPktSentTic:{}",
+//     //             largestLostSentTic.ToDebuggingValue(), lastLagestLossPktSentTic.ToDebuggingValue());
+//     //     /** If the largest sent tic of this loss event,is bigger than the last sent tic of the last lost pkt
+//     //      * (plus a 10ms correction), this session is in Recovery phase.
+//     //      * */
+//     //     if (lastLagestLossPktSentTic.IsInitialized() &&
+//     //         (largestLostSentTic + Duration::FromMilliseconds(10) > lastLagestLossPktSentTic))
+//     //     {
+//     //         SPDLOG_DEBUG("In Recovery");
+//     //         return true;
+//     //     }
+//     //     else
+//     //     {
+//     //         // a new timelost
+//     //         lastLagestLossPktSentTic = largestLostSentTic;
+//     //         SPDLOG_DEBUG("new loss");
+//     //         return false;
+//     //     }
+
+//     // }
+
+//     void ExitSlowStart()
+//     ;
+//     // {
+//     //     SPDLOG_DEBUG("m_ssThresh:{}, m_cwnd:{}", m_ssThresh, m_cwnd);
+//     //     m_ssThresh = m_cwnd;
+//     // }
+
+
+//     void OnDataRecv(const AckEvent& ackEvent)
+//     ;
+//     // {
+//     //     SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
+//     //     if (InSlowStart())
+//     //     {
+//     //         /// add 1 for each ack event
+//     //         m_cwnd += 1;
+
+//     //         if (m_cwnd >= m_ssThresh)
+//     //         {
+//     //             ExitSlowStart();
+//     //         }
+//     //         SPDLOG_DEBUG("new m_cwnd:{}", m_cwnd);
+//     //     }
+//     //     else
+//     //     {
+//     //         /// add cwnd for each RTT
+//     //         m_cwndCnt++;
+//     //         m_cwnd += m_cwndCnt / m_cwnd;
+//     //         if (m_cwndCnt == m_cwnd)
+//     //         {
+//     //             m_cwndCnt = 0;
+//     //         }
+//     //         SPDLOG_DEBUG("not in slow start state,new m_cwndCnt:{} new m_cwnd:{}",
+//     //                 m_cwndCnt, ackEvent.DebugInfo(), m_cwnd);
+
+//     //     }
+//     //     m_cwnd = BoundCwnd(m_cwnd);
+
+//     //     SPDLOG_DEBUG("after RX, m_cwnd={}", m_cwnd);
+//     // }
+
+//     void OnDataLoss(const LossEvent& lossEvent)
+//     ;
+//     // {
+//     //     SPDLOG_DEBUG("lossevent:{}", lossEvent.DebugInfo());
+//     //     Timepoint maxsentTic{ Timepoint::Zero() };
+
+//     //     for (const auto& lostpkt: lossEvent.lossPackets)
+//     //     {
+//     //         maxsentTic = std::max(maxsentTic, lostpkt.sendtic);
+//     //     }
+
+//     //     /** In Recovery phase, cwnd will decrease 1 pkt for each lost pkt
+//     //      *  Otherwise, cwnd will cut half.
+//     //      * */
+//     //     if (InSlowStart())
+//     //     {
+//     //         // loss in slow start, just cut half
+//     //         m_cwnd = m_cwnd / 2;
+//     //         m_cwnd = BoundCwnd(m_cwnd);
+
+//     //     }
+//     //     else //if (!LostCheckRecovery(maxsentTic))
+//     //     {
+//     //         // Not In slow start and not inside Recovery state
+//     //         // [SM]
+//     //         // Cut half
+//     //         // m_cwnd = m_cwnd / 2;
+//     //         m_cwnd -= lossEvent.lossPackets.size() / m_cwnd + 1;
+            
+//     //         m_cwnd = BoundCwnd(m_cwnd);
+//     //         m_ssThresh = m_cwnd;
+//     //         // enter Recovery state
+//     //     }
+//     //     SPDLOG_DEBUG("after Loss, m_cwnd={}", m_cwnd);
+//     // }
+
+
+//     uint32_t BoundCwnd(uint32_t trySetCwnd)
+//     ;
+//     // {
+//     //     return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
+//     // }
+
+//     uint32_t m_cwnd{ 1 };
+//     uint32_t m_cwndCnt{ 0 }; /** in congestion avoid phase, used for counting ack packets*/
+//     Timepoint lastLagestLossPktSentTic{ Timepoint::Zero() };
+
+
+//     uint32_t m_minCwnd{ 1 };
+//     uint32_t m_maxCwnd{ 64 };
+//     uint32_t m_ssThresh{ 32 };/** slow start threshold*/
+
+//     //[SM]
+//     std::weak_ptr<SessionStreamController> m_sessionhandler;
+// };
+
