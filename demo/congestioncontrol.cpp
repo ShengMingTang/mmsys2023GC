@@ -394,6 +394,7 @@ uint32_t RenoAIADCongestionContrl::BoundCwnd(uint32_t trySetCwnd)
     return std::max(m_minCwnd, std::min(trySetCwnd, m_maxCwnd));
 }
 
+
  BBRCongestionControl::BBRCongestionControl(const RenoCongestionCtlConfig& ccConfig, std::weak_ptr<SessionStreamController> shared_ptr)
 {
     m_ssThresh = ccConfig.ssThresh;
@@ -437,7 +438,7 @@ void BBRCongestionControl::OnDataAckOrLoss(const AckEvent& ackEvent, const LossE
 
     if (ackEvent.valid)
     {
-        OnDataRecv(ackEvent);
+        OnDataRecv(ackEvent, rttstats);
     }
 
 }
@@ -493,10 +494,23 @@ void BBRCongestionControl::ExitSlowStart()
     m_ssThresh = m_cwnd;
 }
 
+float BBRCongestionControl::CurrBwEstimate(uint64_t acked_bytes, double inflight_bytes, uint64_t rtt){
+    // acked_bytes: number of bytes acknowledged in the latest received ACK
+    // inflight_bytes: calculate the number of in-flight bytes
+    // rtt: calculate the RTT of the latest packet
+    double estimated_bandwidth = (inflight_bytes + static_cast<double>(acked_bytes)) / std::max<double>(rtt, 1); // calculate the estimated bandwidth in bytes per second
+    return estimated_bandwidth;
+}
 
-void BBRCongestionControl::OnDataRecv(const AckEvent& ackEvent)
+void BBRCongestionControl::OnDataRecv(const AckEvent& ackEvent, RttStats& rttstats)
 {
     SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);
+
+    double BytePerPkt = 1; // can we get the size of the pkt
+    uint64_t acked_bytes = 0; // can we get the size of the ack bytes
+    double currBw = CurrBwEstimate(acked_bytes ,GetInFlightPktNum()*BytePerPkt, static_cast<uint64_t>(rttstats.latest_rtt().ToMicroseconds()));
+    
+
     if (InSlowStart())
     {
         /// add 1 for each ack event

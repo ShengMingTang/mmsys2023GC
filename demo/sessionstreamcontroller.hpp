@@ -298,7 +298,9 @@ public:
     //     return m_cwnd;
     // }
 
-//    virtual uint32_t GetFreeCWND() = 0;
+    //    virtual uint32_t GetFreeCWND() = 0;
+
+    float CurrBwEstimate(uint64_t acked_bytes, double inflight_bytes, uint64_t rtt);
 
 private:
 
@@ -350,7 +352,7 @@ private:
     // }
 
 
-    void OnDataRecv(const AckEvent& ackEvent)
+    void OnDataRecv(const AckEvent& ackEvent, RttStats& rttstats)
     ;
     // {
     //     SPDLOG_DEBUG("ackevent:{},m_cwnd:{}", ackEvent.DebugInfo(), m_cwnd);

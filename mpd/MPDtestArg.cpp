@@ -49,7 +49,7 @@ int main(int argc, char** argv)
 
     // [SM]
     json param = {
-        {"ccType", CongestionCtlType::bbr},
+        {"ccType", CongestionCtlType::reno_AIAD},
         {"multiPathType", MultiPathSchedulerType::MULTI_PATH_SCHEDULE_BDP_WITHLOSS},
         {"minWnd", 1},
         {"maxWnd", 64},
